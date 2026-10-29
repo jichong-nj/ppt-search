@@ -1,0 +1,44 @@
+{
+  "name": "@dsh-plugins/ppt-search",
+  "version": "1.0.0",
+  "description": "PPT knowledge base: upload .pptx, per-slide text extraction and previews, full-text search (web page, agent tools, MCP), outline-based deck composition",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "src",
+    "locale",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.js",
+    "prepare": "node build.js"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.11.2",
+    "jszip": "^3.10.2"
+  },
+  "peerDependencies": {
+    "react": "^18.2.0"
+  }
+}

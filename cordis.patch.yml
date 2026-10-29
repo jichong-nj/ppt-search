@@ -1,0 +1,7 @@
+# ppt-search — host patch layer.
+#
+# New rows must be appended with `insert` (a plain `- id:` patch only modifies
+# an existing row and the loader would skip an unknown entry).
+- insert:
+    - id: ppt-search
+      name: '@dsh-plugins/ppt-search'
