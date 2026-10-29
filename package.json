@@ -2,6 +2,16 @@
   "name": "@dsh-plugins/ppt-search",
   "version": "1.0.0",
   "description": "PPT knowledge base: upload .pptx, per-slide text extraction and previews, full-text search (web page, agent tools, MCP), outline-based deck composition",
+  "license": "MIT",
+  "author": "jichong-nj",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jichong-nj/ppt-search.git"
+  },
+  "homepage": "https://github.com/jichong-nj/ppt-search#readme",
+  "bugs": {
+    "url": "https://github.com/jichong-nj/ppt-search/issues"
+  },
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
