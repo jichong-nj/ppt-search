@@ -7,7 +7,7 @@ const { useState, useEffect, useCallback, useRef } = React;
 const h = React.createElement;
 
 const API = "/ppt-search/api";
-const CSS_TAG_ID = "@dsh-plugins/ppt-search/ps.css";
+const CSS_TAG_ID = "@jichong/ppt-search/ps.css";
 const BASKET_KEY = "ppt-search:basket";
 
 const inject = ["slots"];
@@ -98,6 +98,46 @@ const CSS = `
 .ps-drop.over { border-color:var(--ps-blue); color:var(--ps-blue); }
 .ps-a { color:var(--ps-blue); text-decoration:none; }
 .ps-a:hover { text-decoration:underline; }
+/* ── 对话内工具调用行（tool.call.toolview）── */
+.ps-tv { min-width:0; max-width:100%; }
+.ps-tv-row { display:flex; align-items:center; gap:6px; min-height:26px; padding:1px 4px; border-radius:6px;
+  color:var(--dsw-alias-label-secondary,#59636e); font-size:var(--dsh-content-font-size-secondary,13px); min-width:0; }
+.ps-tv-click { cursor:pointer; }
+.ps-tv-click:hover { background:rgba(128,148,170,.10); }
+.ps-tv-icon { flex:0 0 auto; display:inline-flex; align-items:center; }
+.ps-tv-title { flex:0 0 auto; }
+.ps-tv-dot { flex:0 0 auto; width:2px; height:2px; border-radius:1px; background:currentColor; opacity:.45; }
+.ps-tv-sum { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ps-tv-row[data-state="error"] .ps-tv-sum { color:var(--dsw-alias-state-error-primary,#cf222e); }
+.ps-tv-row[data-state="stopped"] .ps-tv-sum { opacity:.7; }
+.ps-tv-chev { flex:0 0 auto; display:inline-flex; opacity:.55; }
+.ps-tv-body { display:flex; flex-direction:column; gap:8px; margin:4px 0 6px 24px; padding:10px 12px;
+  border:1px solid var(--dsw-alias-border-l1,#d0d7de); border-radius:8px;
+  background:var(--dsw-alias-bg-container,#f6f8fa); max-width:760px; }
+.ps-tv-hits { display:flex; flex-direction:column; gap:8px; }
+.ps-tv-hit { display:flex; gap:10px; min-width:0; }
+.ps-tv-thumb { flex:0 0 auto; cursor:zoom-in; }
+.ps-tv-thumb canvas { width:150px; display:block; aspect-ratio:var(--ps-ratio,1.7778);
+  border:1px solid var(--dsw-alias-border-l1,#d0d7de); border-radius:4px; background:#fff; }
+.ps-tv-hit-body { flex:1 1 auto; min-width:0; }
+.ps-tv-hit-title { font-weight:600; font-size:13px; color:var(--dsw-alias-label-primary,#1f2328);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ps-tv-hit-meta { font-size:11.5px; color:var(--dsw-alias-label-secondary,#59636e); margin:2px 0 1px; }
+.ps-tv-snip { font-size:12px; color:var(--dsw-alias-label-secondary,#59636e); margin-top:2px;
+  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+.ps-tv-big { display:block; cursor:zoom-in; }
+.ps-tv-big canvas { width:100%; display:block; aspect-ratio:var(--ps-ratio,1.7778);
+  border:1px solid var(--dsw-alias-border-l1,#d0d7de); border-radius:6px; background:#fff; }
+.ps-tv-text { white-space:pre-wrap; font-size:12px; line-height:1.55; color:var(--dsw-alias-label-secondary,#59636e);
+  max-height:260px; overflow-y:auto; }
+.ps-tv-loading { font-size:12px; color:var(--dsw-alias-label-tertiary,#818b96); padding:2px 0; }
+.ps-tv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; }
+.ps-tv-grid canvas { width:100%; display:block; aspect-ratio:var(--ps-ratio,1.7778);
+  border:1px solid var(--dsw-alias-border-l1,#d0d7de); border-radius:4px; background:#fff; }
+.ps-tv-grid-cap { font-size:11px; color:var(--dsw-alias-label-secondary,#59636e); margin-top:2px;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ps-tv-a { color:var(--dsw-alias-link-primary,#0969da); text-decoration:none; align-self:flex-start; }
+.ps-tv-a:hover { text-decoration:underline; }
 `;
 
 function ensureCss() {
@@ -1474,6 +1514,335 @@ function View() {
 	);
 }
 
+// ── 对话内工具调用预览（tool.call.toolview keyed slot）────────────────────────
+//
+// DSH 会话流中每个工具调用行通过 renderSlot("tool.call.toolview", owner, {entryKey: toolName,
+// fallback: 通用行}) 渲染；插件用 key=工具名 注册组件即可整行替换通用样式。
+// 组件 props（来自 ToolCall owner）：{ callId, toolName, phase, block, openFile, cwd, home,
+// loadImage, useDisclosure, inspect, sessionId, useSessions, t }。
+// block：结果态含 kind/call.argsRaw/content/isError/error；运行态 phase 为 preparing|start。
+
+/** 从工具 block 解析调用参数；流式未完成或解析失败返回 null。 */
+function parseToolArgs(block) {
+	const raw = "kind" in block ? block.call?.argsRaw ?? "" : block.phase === "start" ? block.argsRaw : null;
+	if (typeof raw !== "string" || raw === "") return null;
+	try {
+		const v = JSON.parse(raw);
+		return v !== null && typeof v === "object" ? v : null;
+	} catch {
+		return null;
+	}
+}
+
+/** 调用状态：preparing | running | stopped | error | ok */
+function toolState(block) {
+	if (!("kind" in block)) return block.phase === "preparing" ? "preparing" : "running";
+	if (block.error?.code === "interrupted") return "stopped";
+	return block.isError ? "error" : "ok";
+}
+
+/** 工具结果的全部 text 内容拼接。 */
+function toolResultText(block) {
+	if (!("kind" in block)) return "";
+	const c = block.content;
+	if (!Array.isArray(c)) return "";
+	return c.map((p) => (p?.type === "text" ? p.text ?? "" : "")).filter((s) => s !== "").join("\n");
+}
+
+function firstLine(s) {
+	const i = s.indexOf("\n");
+	return (i < 0 ? s : s.slice(0, i)).trim();
+}
+
+/** 展开状态：优先复用宿主 useDisclosure（支持全局展开/收起），否则本地 state。 */
+function useToolExpand(useDisclosure) {
+	const disc = typeof useDisclosure === "function" ? useDisclosure() : null;
+	const [own, setOwn] = useState(false);
+	if (disc !== null) return { expanded: disc.expanded === true, toggle: disc.toggle };
+	return { expanded: own, toggle: () => setOwn((v) => !v) };
+}
+
+function tvSvg(paths) {
+	return h(
+		"svg",
+		{
+			width: 15,
+			height: 15,
+			viewBox: "0 0 24 24",
+			fill: "none",
+			stroke: "currentColor",
+			strokeWidth: 1.8,
+			strokeLinecap: "round",
+			strokeLinejoin: "round",
+			"aria-hidden": "true",
+		},
+		...paths,
+	);
+}
+const ICON_SEARCH = tvSvg([h("circle", { cx: 11, cy: 11, r: 7 }), h("path", { d: "M20.5 20.5L16.7 16.7" })]);
+const ICON_PAGE = tvSvg([
+	h("path", { d: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" }),
+	h("path", { d: "M14 2v6h6" }),
+	h("path", { d: "M8.5 13h7M8.5 17h7" }),
+]);
+const ICON_COMPOSE = tvSvg([
+	h("rect", { x: 3, y: 3.5, width: 18, height: 12, rx: 2 }),
+	h("path", { d: "M12 15.5V21" }),
+	h("path", { d: "M8.5 21h7" }),
+	h("path", { d: "M7 11.5l3-3 2.5 2.5L17 7" }),
+]);
+
+function Chevron({ up }) {
+	return h(
+		"svg",
+		{
+			width: 12,
+			height: 12,
+			viewBox: "0 0 24 24",
+			fill: "none",
+			stroke: "currentColor",
+			strokeWidth: 2,
+			strokeLinecap: "round",
+			strokeLinejoin: "round",
+			"aria-hidden": "true",
+		},
+		h("path", { d: up ? "M18 15l-6-6-6 6" : "M6 9l6 6 6-6" }),
+	);
+}
+
+/** 工具行外壳：图标 + 标题 + 摘要 + 状态 + 可选展开体。 */
+function ToolRow({ icon, title, summary, state, expandable, expanded, onToggle, children }) {
+	const interactive = expandable === true;
+	return h(
+		"div",
+		{ className: "ps-tv" },
+		h(
+			"div",
+			{
+				className: "ps-tv-row" + (interactive ? " ps-tv-click" : ""),
+				"data-state": state,
+				role: interactive ? "button" : undefined,
+				tabIndex: interactive ? 0 : undefined,
+				"aria-expanded": interactive ? expanded : undefined,
+				onClick: interactive ? onToggle : undefined,
+				onKeyDown: interactive
+					? (e) => {
+							if (e.key !== "Enter" && e.key !== " ") return;
+							e.preventDefault();
+							onToggle();
+						}
+					: undefined,
+			},
+			h("span", { className: "ps-tv-icon" }, icon),
+			h("span", { className: "ps-tv-title" }, title),
+			h("span", { className: "ps-tv-dot" }),
+			h("span", { className: "ps-tv-sum" }, summary),
+			interactive ? h("span", { className: "ps-tv-chev" }, h(Chevron, { up: expanded })) : null,
+		),
+		interactive && expanded ? h("div", { className: "ps-tv-body" }, children) : null,
+	);
+}
+
+/** 全屏放大浮层（复用 .ps-zoom 样式）。 */
+function TvZoom({ zoom, onClose }) {
+	if (zoom === null) return null;
+	return h(
+		"div",
+		{ className: "ps-zoom", onClick: onClose },
+		h(SlideCanvas, { deckId: zoom.deckId, n: zoom.n }),
+		h("div", { className: "ps-zoom-cap" }, zoom.label ?? ""),
+		h("div", { className: "ps-zoom-hint" }, "点击任意处关闭"),
+	);
+}
+
+/** 按调用参数重新查询结构化命中（与服务端工具逻辑一致，结果确定性相同）。 */
+async function fetchHits(args) {
+	const limit = Math.min(Number(args.limit) || 10, 50);
+	const query = typeof args.query === "string" ? args.query.trim() : "";
+	if (query === "" && typeof args.deckId === "string" && args.deckId !== "") {
+		const d = await call("detail", { deckId: args.deckId });
+		const hits = (d.slides ?? []).map((s) => ({
+			deckId: args.deckId,
+			deckName: d.deck?.name ?? args.deckId,
+			n: s.n,
+			title: s.title,
+			score: 0,
+			snippets: [{ field: "body", text: String(s.body ?? "").slice(0, 120) }],
+		}));
+		return { total: hits.length, hits: hits.slice(0, limit) };
+	}
+	const payload = { query, limit };
+	if (typeof args.deckId === "string" && args.deckId !== "") payload.deckId = args.deckId;
+	const v = await call("search", payload);
+	return { total: v.total ?? 0, hits: v.hits ?? [] };
+}
+
+/** ppt_search 展开体：命中卡片（缩略图 + 标题 + 元信息 + 摘要），点缩略图放大。 */
+function SearchHits({ args }) {
+	const [st, setSt] = useState({ loading: true, error: "", total: 0, hits: [] });
+	const [zoom, setZoom] = useState(null);
+	const q = typeof args.query === "string" ? args.query : "";
+	const dk = typeof args.deckId === "string" ? args.deckId : "";
+	const lim = args.limit;
+	useEffect(() => {
+		let alive = true;
+		setSt({ loading: true, error: "", total: 0, hits: [] });
+		fetchHits({ query: q, deckId: dk, limit: lim }).then(
+			(v) => {
+				if (alive) setSt({ loading: false, error: "", total: v.total, hits: v.hits });
+			},
+			(e) => {
+				if (alive) setSt({ loading: false, error: String(e?.message ?? e), total: 0, hits: [] });
+			},
+		);
+		return () => {
+			alive = false;
+		};
+	}, [q, dk, lim]);
+	if (st.loading) return h("div", { className: "ps-tv-loading" }, "加载预览…");
+	if (st.error !== "") return h("div", { className: "ps-tv-loading", style: { color: "var(--ps-red,#cf222e)" } }, st.error);
+	if (st.hits.length === 0) return h("div", { className: "ps-tv-loading" }, "没有命中");
+	return h(
+		"div",
+		{ className: "ps-tv-hits" },
+		st.hits.map((hit) =>
+			h(
+				"div",
+				{ className: "ps-tv-hit", key: `${hit.deckId}#${hit.n}` },
+				h(
+					"span",
+					{
+						className: "ps-tv-thumb",
+						title: "点击放大",
+						onClick: () =>
+							setZoom({
+								deckId: hit.deckId,
+								n: hit.n,
+								label: `${hit.deckName ?? hit.deckId} · 第 ${hit.n} 页 · ${hit.title ?? ""}`,
+							}),
+					},
+					h(SlideCanvas, { deckId: hit.deckId, n: hit.n }),
+				),
+				h(
+					"div",
+					{ className: "ps-tv-hit-body" },
+					h("div", { className: "ps-tv-hit-title" }, hit.title ?? `第 ${hit.n} 页`),
+					h(
+						"div",
+						{ className: "ps-tv-hit-meta" },
+						`${hit.deckName ?? hit.deckId} · 第 ${hit.n} 页${typeof hit.score === "number" && hit.score > 0 ? ` · 相关度 ${hit.score.toFixed(2)}` : ""}`,
+					),
+					(hit.snippets ?? []).slice(0, 2).map((s, i) =>
+						h("div", { className: "ps-tv-snip", key: i }, s.field === "body" ? s.text : `[${s.field}] ${s.text}`),
+					),
+				),
+			),
+		),
+		h(TvZoom, { zoom, onClose: () => setZoom(null) }),
+	);
+}
+
+/** ppt_search 工具行。 */
+function PptSearchRow({ block, useDisclosure }) {
+	const args = parseToolArgs(block) ?? {};
+	const state = toolState(block);
+	const text = toolResultText(block);
+	const { expanded, toggle } = useToolExpand(useDisclosure);
+	const query = typeof args.query === "string" ? args.query.trim() : "";
+	let summary;
+	if (state === "error" || state === "stopped") summary = firstLine(text) || (state === "stopped" ? "已中断" : "检索失败");
+	else if (state === "ok") {
+		const m = /共 (\d+) 条命中/.exec(text);
+		summary = (query !== "" ? `检索「${query}」` : `${args.deckId ?? ""} 页目录`) + (m !== null ? ` · 命中 ${m[1]} 页` : "");
+	} else summary = "检索中…";
+	const expandable = state === "ok";
+	return h(
+		ToolRow,
+		{ icon: ICON_SEARCH, title: "PPT检索", summary, state, expandable, expanded, onToggle: toggle },
+		expandable && expanded ? h(SearchHits, { args }) : null,
+	);
+}
+
+/** ppt_slide_get 工具行：大图预览 + 结果全文。 */
+function PptSlideGetRow({ block, useDisclosure }) {
+	const args = parseToolArgs(block) ?? {};
+	const state = toolState(block);
+	const text = toolResultText(block);
+	const { expanded, toggle } = useToolExpand(useDisclosure);
+	const [zoom, setZoom] = useState(null);
+	const deckId = typeof args.deckId === "string" ? args.deckId : "";
+	const n = Number(args.n);
+	let summary;
+	if (state === "error" || state === "stopped") summary = firstLine(text) || (state === "stopped" ? "已中断" : "读取失败");
+	else if (state === "ok") {
+		const nameM = /^# (.+?) 第 (\d+) 页/.exec(text);
+		const titleM = /^标题: (.*)$/m.exec(text);
+		summary = `${nameM?.[1] ?? deckId} 第 ${n} 页${titleM !== null ? ` · ${titleM[1]}` : ""}`;
+	} else summary = "读取中…";
+	const expandable = state === "ok" && deckId !== "" && Number.isFinite(n);
+	return h(
+		ToolRow,
+		{ icon: ICON_PAGE, title: "PPT页", summary, state, expandable, expanded, onToggle: toggle },
+		expandable && expanded
+			? h(
+					"div",
+					{ style: { display: "flex", flexDirection: "column", gap: "8px" } },
+					h(
+						"span",
+						{
+							className: "ps-tv-big",
+							title: "点击放大",
+							onClick: () => setZoom({ deckId, n, label: summary }),
+						},
+						h(SlideCanvas, { deckId, n }),
+					),
+					h("div", { className: "ps-tv-text" }, text),
+					h(TvZoom, { zoom, onClose: () => setZoom(null) }),
+				)
+			: null,
+	);
+}
+
+/** ppt_compose 工具行：合成页缩略图网格 + 下载链接。 */
+function PptComposeRow({ block, useDisclosure }) {
+	const args = parseToolArgs(block) ?? {};
+	const state = toolState(block);
+	const text = toolResultText(block);
+	const { expanded, toggle } = useToolExpand(useDisclosure);
+	const items = Array.isArray(args.items) ? args.items : [];
+	let summary;
+	if (state === "error" || state === "stopped") summary = firstLine(text) || (state === "stopped" ? "已中断" : "合成失败");
+	else if (state === "ok") {
+		const nameM = /^已合成 (.+?)（/.exec(text);
+		summary = `${nameM?.[1] ?? args.name ?? "新文件"} · ${items.length} 页`;
+	} else summary = "合成中…";
+	const urlM = /下载: (\S+)/.exec(text);
+	const expandable = state === "ok" && items.length > 0;
+	return h(
+		ToolRow,
+		{ icon: ICON_COMPOSE, title: "PPT合成", summary, state, expandable, expanded, onToggle: toggle },
+		expandable && expanded
+			? h(
+					"div",
+					{ style: { display: "flex", flexDirection: "column", gap: "8px" } },
+					h(
+						"div",
+						{ className: "ps-tv-grid" },
+						items.map((it, i) =>
+							h(
+								"div",
+								{ className: "ps-tv-grid-item", key: i },
+								h(SlideCanvas, { deckId: it.deckId, n: Number(it.n) }),
+								h("div", { className: "ps-tv-grid-cap" }, `${i + 1}. ${it.titleOverride ?? `${it.deckId}#${it.n}`}`),
+							),
+						),
+					),
+					urlM !== null ? h("a", { className: "ps-tv-a", href: urlM[1], target: "_blank", rel: "noreferrer" }, "下载 pptx") : null,
+				)
+			: null,
+	);
+}
+
 // ── entry ────────────────────────────────────────────────────────────────────
 
 /** 左侧面板列表图标：演示屏 + 折线。 */
@@ -1520,6 +1889,34 @@ function apply(ctx) {
 				key: "ppt-search",
 			},
 			View,
+		),
+	);
+	// 会话流工具调用行：key=工具名，整行替换通用样式，展开后显示幻灯片预览
+	ctx.slots.inject("tool.call.toolview", () =>
+		ctx.slots.register(
+			{
+				name: "tool.call.toolview",
+				key: "ppt_search",
+			},
+			PptSearchRow,
+		),
+	);
+	ctx.slots.inject("tool.call.toolview", () =>
+		ctx.slots.register(
+			{
+				name: "tool.call.toolview",
+				key: "ppt_slide_get",
+			},
+			PptSlideGetRow,
+		),
+	);
+	ctx.slots.inject("tool.call.toolview", () =>
+		ctx.slots.register(
+			{
+				name: "tool.call.toolview",
+				key: "ppt_compose",
+			},
+			PptComposeRow,
 		),
 	);
 }
