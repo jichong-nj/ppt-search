@@ -1,5 +1,5 @@
 {
-  "name": "@dsh-plugins/ppt-search",
+  "name": "@jichong/ppt-search",
   "version": "1.0.0",
   "description": "PPT knowledge base: upload .pptx, per-slide text extraction and previews, full-text search (web page, agent tools, MCP), outline-based deck composition",
   "license": "MIT",

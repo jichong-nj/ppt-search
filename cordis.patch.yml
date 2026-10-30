@@ -4,4 +4,4 @@
 # an existing row and the loader would skip an unknown entry).
 - insert:
     - id: ppt-search
-      name: '@dsh-plugins/ppt-search'
+      name: '@jichong/ppt-search'

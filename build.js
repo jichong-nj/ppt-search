@@ -8,7 +8,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 const ROOT = new URL(".", import.meta.url);
-const ID = "@dsh-plugins/ppt-search";
+const ID = "@jichong/ppt-search";
 
 const source = await readFile(new URL("src/client.js", ROOT), "utf8");
 const indented = source
