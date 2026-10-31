@@ -69,12 +69,12 @@ const CSS = `
 .ps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px;
   padding:10px; border-top:1px solid var(--ps-bd); }
 .ps-slide { border:1px solid var(--ps-bd); border-radius:6px; overflow:hidden; background:var(--ps-bg2); }
-.ps-slide canvas { width:100%; display:block; aspect-ratio:var(--ps-ratio, 1.7778); background:#fff; }
+.ps-slide canvas { width:100%; display:block; aspect-ratio:var(--ps-ratio, 1.7778); background:#fff; cursor:zoom-in; }
 .ps-slide-foot { display:flex; align-items:center; gap:6px; padding:5px 7px; }
 .ps-slide-title { flex:1 1 auto; font-size:11.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ps-hit { display:flex; gap:10px; border:1px solid var(--ps-bd); border-radius:8px;
   background:var(--ps-sf); padding:8px; margin-bottom:8px; }
-.ps-hit canvas { width:180px; min-width:180px; aspect-ratio:var(--ps-ratio, 1.7778);
+.ps-hit canvas { width:180px; min-width:180px; aspect-ratio:var(--ps-ratio, 1.7778); cursor:zoom-in;
   border:1px solid var(--ps-bd); border-radius:4px; background:#fff; }
 .ps-hit-body { flex:1 1 auto; min-width:0; }
 .ps-hit-title { font-weight:600; margin-bottom:2px; }
@@ -86,7 +86,7 @@ const CSS = `
 .ps-basket-item { border:1px solid var(--ps-bd); border-radius:8px; background:var(--ps-sf);
   padding:8px 10px; margin-bottom:8px; }
 .ps-basket-item canvas { width:120px; aspect-ratio:var(--ps-ratio, 1.7778); border:1px solid var(--ps-bd);
-  border-radius:4px; background:#fff; float:left; margin-right:10px; }
+  border-radius:4px; background:#fff; float:left; margin-right:10px; cursor:zoom-in; }
 .ps-basket-item::after { content:""; display:block; clear:both; }
 .ps-field { display:flex; align-items:center; gap:6px; margin-top:4px; font-size:12px; }
 .ps-field label { color:var(--ps-mut); min-width:64px; }
@@ -859,7 +859,7 @@ function drawSlide(g, m, mediaBase, onReady) {
 }
 
 /** 单页幻灯片 canvas：拉取渲染模型 JSON → canvas 2D 绘制；尺寸自适应 + dpr 缩放。 */
-function SlideCanvas({ deckId, n, className, style, onMouseEnter, onMouseLeave }) {
+function SlideCanvas({ deckId, n, className, style, onClick }) {
 	const ref = useRef(null);
 	const [ratio, setRatio] = useState(16 / 9);
 	const stRef = useRef({ model: null, error: false });
@@ -922,7 +922,7 @@ function SlideCanvas({ deckId, n, className, style, onMouseEnter, onMouseLeave }
 	}, []);
 
 	const st = Object.assign({ "--ps-ratio": String(ratio) }, style);
-	return h("canvas", { ref, className, style: st, onMouseEnter, onMouseLeave });
+	return h("canvas", { ref, className, style: st, onClick });
 }
 
 // ── 知识库面板 ───────────────────────────────────────────────────────────────
@@ -1065,8 +1065,7 @@ function KbPanel({ decks, error, setError, refresh, basket, addToBasket }) {
 											h(SlideCanvas, {
 												deckId: d.id,
 												n: s.n,
-												onMouseEnter: () => hoverZoom(d.id, s.n, `${d.name} #${s.n} · ${s.title || "(无标题)"}`),
-												onMouseLeave: hoverCancel,
+												onClick: () => openZoom(d.id, s.n, `${d.name} #${s.n} · ${s.title || "(无标题)"}`),
 											}),
 											h(
 												"div",
@@ -1176,8 +1175,7 @@ function SearchPanel({ decks, setError, basket, addToBasket }) {
 							h(SlideCanvas, {
 								deckId: hit.deckId,
 								n: hit.n,
-								onMouseEnter: () => hoverZoom(hit.deckId, hit.n, `${hit.deckName} #${hit.n} · ${hit.title || "(无标题)"}`),
-								onMouseLeave: hoverCancel,
+								onClick: () => openZoom(hit.deckId, hit.n, `${hit.deckName} #${hit.n} · ${hit.title || "(无标题)"}`),
 							}),
 							h(
 								"div",
@@ -1261,8 +1259,7 @@ function BasketPanel({ basket, setBasket, setError, setErrorMsg, decks }) {
 				h(SlideCanvas, {
 					deckId: it.deckId,
 					n: it.n,
-					onMouseEnter: () => hoverZoom(it.deckId, it.n, `${it.deckName} #${it.n} · ${it.title || "(无标题)"}`),
-					onMouseLeave: hoverCancel,
+					onClick: () => openZoom(it.deckId, it.n, `${it.deckName} #${it.n} · ${it.title || "(无标题)"}`),
 				}),
 				h("div", null, h("b", null, `${i + 1}. ${it.title || "(无标题)"}`), h("div", { className: "ps-mut" }, `${it.deckName} #${it.n}`)),
 				h(
@@ -1380,24 +1377,11 @@ function loadBasket() {
 	}
 }
 
-// ── 预览图灯箱：悬停放大，点击关闭 ──────────────────────────────────────────
+// ── 预览图灯箱：点击缩略图放大，点击遮罩/Esc 关闭 ────────────────────────────
 
-let zoomTimer = null;
-let zoomSuppressed = false;
-
-/** 缩略图 mouseenter：延迟 250ms 后广播放大事件（避免扫过网格时闪烁）。 */
-function hoverZoom(deckId, n, label) {
-	if (zoomSuppressed) return;
-	clearTimeout(zoomTimer);
-	zoomTimer = setTimeout(() => {
-		document.dispatchEvent(new CustomEvent("ps-zoom", { detail: { deckId, n, label } }));
-	}, 250);
-}
-
-/** 缩略图 mouseleave：取消未触发的放大；同时解除"关闭后抑制"标记。 */
-function hoverCancel() {
-	clearTimeout(zoomTimer);
-	zoomSuppressed = false;
+/** 缩略图 click：广播放大事件。 */
+function openZoom(deckId, n, label) {
+	document.dispatchEvent(new CustomEvent("ps-zoom", { detail: { deckId, n, label } }));
 }
 
 function ZoomOverlay() {
@@ -1415,14 +1399,9 @@ function ZoomOverlay() {
 		};
 	}, []);
 	if (zoom === null) return null;
-	const close = () => {
-		// 关闭后抑制悬停放大，直到鼠标移出缩略图再移回来（防止刚关又开）
-		zoomSuppressed = true;
-		setZoom(null);
-	};
 	return h(
 		"div",
-		{ className: "ps-zoom", onClick: close },
+		{ className: "ps-zoom", onClick: () => setZoom(null) },
 		h(SlideCanvas, { deckId: zoom.deckId, n: zoom.n }),
 		zoom.label ? h("div", { className: "ps-zoom-cap" }, zoom.label) : null,
 		h("div", { className: "ps-zoom-hint" }, "点击关闭（或按 Esc）"),
@@ -1554,11 +1533,13 @@ function firstLine(s) {
 	return (i < 0 ? s : s.slice(0, i)).trim();
 }
 
-/** 展开状态：优先复用宿主 useDisclosure（支持全局展开/收起），否则本地 state。 */
-function useToolExpand(useDisclosure) {
-	const disc = typeof useDisclosure === "function" ? useDisclosure() : null;
-	const [own, setOwn] = useState(false);
-	if (disc !== null) return { expanded: disc.expanded === true, toggle: disc.toggle };
+/**
+ * 展开状态：本地 state，默认展开（结果预览需保留在最终会话中可见）。
+ * 不再复用宿主 useDisclosure——宿主会在回合结束/新消息时自动收起，
+ * 导致预览"一闪而过"。用户仍可点击工具行手动收起。
+ */
+function useToolExpand() {
+	const [own, setOwn] = useState(true);
 	return { expanded: own, toggle: () => setOwn((v) => !v) };
 }
 
