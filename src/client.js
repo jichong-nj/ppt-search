@@ -198,23 +198,25 @@ const imgCache = new Map();
 function emuFontPx(fontEMU, s) {
 	return fontEMU.replace(/(\d+(?:\.\d+)?)px/, (m, n) => `${Math.max(0.5, parseFloat(n) * s)}px`);
 }
-function fillTextEMU(g, text, fontEMU, x, y, maxW) {
+function fillTextEMU(g, text, fontEMU, x, y, maxW, spcEMU) {
 	if (text === "" || text === null || text === undefined) return;
 	const t = g.getTransform();
 	const s = Math.hypot(t.a, t.b) || 1;
 	g.save();
 	g.setTransform(t.a / s, t.b / s, t.c / s, t.d / s, t.a * x + t.c * y + t.e, t.b * x + t.d * y + t.f);
 	g.font = emuFontPx(fontEMU, s);
+	if (spcEMU && "letterSpacing" in g) g.letterSpacing = `${spcEMU * s}px`;
 	if (maxW !== undefined && maxW !== null) g.fillText(text, 0, 0, Math.max(1, maxW * s));
 	else g.fillText(text, 0, 0);
 	g.restore();
 }
-function measureEMU(g, text, fontEMU) {
+function measureEMU(g, text, fontEMU, spcEMU) {
 	const t = g.getTransform();
 	const s = Math.hypot(t.a, t.b) || 1;
 	g.save();
 	g.setTransform(1, 0, 0, 1, 0, 0);
 	g.font = emuFontPx(fontEMU, s);
+	if (spcEMU && "letterSpacing" in g) g.letterSpacing = `${spcEMU * s}px`;
 	const w = g.measureText(text).width / s;
 	g.restore();
 	return w;
@@ -464,9 +466,10 @@ function layoutParas(g, tb, boxW) {
 		for (const r of runs) {
 			if (r.br === 1 || r.t === "\n") { stream.push({ br: true }); continue; }
 			const fnt = runFont(r);
+			const spcEMU = (r.spc ?? 0) * PT;
 			for (const tk of tokenize(r.t)) {
 				if (tk === "\n") stream.push({ br: true });
-				else stream.push({ tk, run: r, w: measureEMU(g, tk, fnt) });
+				else stream.push({ tk, run: r, w: measureEMU(g, tk, fnt, spcEMU) });
 			}
 		}
 		let line = Object.assign({}, base, { items: [], w: 0, first: true });
@@ -482,6 +485,7 @@ function layoutParas(g, tb, boxW) {
 			line.w += s.w;
 		}
 		flush();
+		if (lines.length > 0) lines[lines.length - 1].last = 1;
 	}
 	return lines;
 }
@@ -514,20 +518,36 @@ function drawText(g, tb, x, y, w, h) {
 			g.textAlign = "left";
 			fillTextEMU(g, l.bulletTxt, runFont({ sz: fr.sz ?? 18, f: p.bullet.f, i: fr.i, b: fr.b }), bx + marL + indent, ty);
 		}
+		let distGap = 0;
+		if (tb.wrap !== false && l.items.length > 0 && (p.algn === "dist" || (p.algn === "just" && !l.last))) {
+			let chars = 0;
+			for (const it of l.items) chars += Array.from(it.text).length;
+			if (chars > 1) distGap = Math.max(0, bw - marL - l.w) / chars;
+		}
 		for (const it of l.items) {
 			const r = it.run;
 			g.fillStyle = rgba(r.c ?? "#000000", r.a ?? 1);
 			g.textAlign = "left";
 			const sz = (r.sz ?? 18) * PT;
 			const dy = r.base ? -((r.base / 100) * sz) : 0;
-			fillTextEMU(g, it.text, runFont(r), lx, ty + dy);
+			const fnt = runFont(r);
+			const spcEMU = (r.spc ?? 0) * PT;
+			const sx = lx;
+			if (distGap > 0) {
+				for (const ch of Array.from(it.text)) {
+					fillTextEMU(g, ch, fnt, lx, ty + dy, null, spcEMU);
+					lx += measureEMU(g, ch, fnt, spcEMU) + distGap;
+				}
+			} else {
+				fillTextEMU(g, it.text, fnt, lx, ty + dy, null, spcEMU);
+				lx += it.w;
+			}
 			if ((r.u !== undefined && r.u !== null) || (r.s !== undefined && r.s !== null)) {
 				g.strokeStyle = rgba(r.c ?? "#000000", r.a ?? 1);
 				g.lineWidth = Math.max(9525, sz * 0.05);
-				if (r.u !== undefined && r.u !== null) { g.beginPath(); g.moveTo(lx, ty + dy + sz * 0.42); g.lineTo(lx + it.w, ty + dy + sz * 0.42); g.stroke(); }
-				if (r.s !== undefined && r.s !== null) { g.beginPath(); g.moveTo(lx, ty + dy - sz * 0.28); g.lineTo(lx + it.w, ty + dy - sz * 0.28); g.stroke(); }
+				if (r.u !== undefined && r.u !== null) { g.beginPath(); g.moveTo(sx, ty + dy + sz * 0.42); g.lineTo(sx + it.w, ty + dy + sz * 0.42); g.stroke(); }
+				if (r.s !== undefined && r.s !== null) { g.beginPath(); g.moveTo(sx, ty + dy - sz * 0.28); g.lineTo(sx + it.w, ty + dy - sz * 0.28); g.stroke(); }
 			}
-			lx += it.w;
 		}
 		cy += l.lh;
 	}
