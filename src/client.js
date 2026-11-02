@@ -52,6 +52,7 @@ const CSS = `
 .ps-btn.primary:hover { opacity:.9; color:#fff; }
 .ps-btn.danger:hover { border-color:var(--ps-red); color:var(--ps-red); }
 .ps-btn:disabled { opacity:.5; cursor:default; }
+a.ps-btn { text-decoration:none; display:inline-block; }
 .ps-input, .ps-select { background:var(--ps-sf); color:var(--ps-fg); border:1px solid var(--ps-bd);
   border-radius:6px; padding:4px 8px; font-size:12.5px; }
 .ps-input:focus, .ps-select:focus { outline:none; border-color:var(--ps-blue); }
@@ -1049,30 +1050,30 @@ function KbPanel({ decks, error, setError, refresh, basket, addToBasket }) {
 							h("span", { className: `ps-badge ${d.status}` }, STATUS_LABEL[d.status] ?? d.status),
 							h("span", { className: "ps-name" }, d.name),
 							h("span", { className: "ps-mut" }, `${d.slideCount ?? 0} 页`),
+							h("span", { className: "ps-mut" }, fmtTime(d.uploadedAt)),
 							d.error !== undefined ? h("span", { className: "ps-badge error" }, d.error) : null,
 							h("span", { style: { flex: "1 1 auto" } }),
-							h("span", { className: "ps-mut" }, fmtTime(d.uploadedAt)),
-							h("span", { className: "ps-mut" }, openId === d.id ? "收起 ▲" : "展开 ▼"),
-						),
-						h(
-							"div",
-							{ className: "ps-row", style: { padding: "0 10px 8px" } },
 							h(
 								"a",
-								{ className: "ps-a ps-mut", href: `${API}/download/${d.id}`, style: { fontSize: "12px" } },
+								{ className: "ps-btn", href: `${API}/download/${d.id}`, onClick: (e) => e.stopPropagation() },
 								"下载原文件",
 							),
 							d.status === "error"
-								? h("button", { className: "ps-btn", onClick: () => act(() => call("retry", { deckId: d.id })) }, "重试")
+								? h(
+										"button",
+										{ className: "ps-btn", onClick: (e) => { e.stopPropagation(); act(() => call("retry", { deckId: d.id })); } },
+										"重试",
+									)
 								: null,
 							h(
 								"button",
 								{
 									className: "ps-btn danger",
-									onClick: () => act(() => call("delete", { deckId: d.id }), `确定删除「${d.name}」？`),
+									onClick: (e) => { e.stopPropagation(); act(() => call("delete", { deckId: d.id }), `确定删除「${d.name}」？`); },
 								},
 								"删除",
 							),
+							h("span", { className: "ps-mut" }, openId === d.id ? "收起 ▲" : "展开 ▼"),
 						),
 						openId === d.id && details[d.id] !== undefined
 							? h(
