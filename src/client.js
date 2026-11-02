@@ -21,10 +21,11 @@ const CSS = `
   --ps-blue:#0969da; --ps-green:#1a7f37; --ps-red:#cf222e; --ps-yellow:#9a6700;
   background:var(--ps-bg); color:var(--ps-fg);
   font-family:var(--font-ui,system-ui,sans-serif); font-size:13px; }
-@media (prefers-color-scheme: dark) {
-  .ps { --ps-bg:#0d1117; --ps-fg:#e6edf3; --ps-bg2:#161b22; --ps-sf:#161b22;
-    --ps-bd:#30363d; --ps-mut:#9198a1; --ps-dim:#6e7681;
-    --ps-blue:#4493f8; --ps-green:#3fb950; --ps-red:#f85149; --ps-yellow:#d29922; } }
+/* 深色态跟随 dsh 外观设置（浅色/深色/跟随系统），由 shell 在 body 上落 data-ds-dark-theme；
+   不用 prefers-color-scheme，否则“浅色”设置下 OS 深色会误判 */
+body[data-ds-dark-theme] .ps { --ps-bg:#0d1117; --ps-fg:#e6edf3; --ps-bg2:#161b22; --ps-sf:#161b22;
+  --ps-bd:#30363d; --ps-mut:#9198a1; --ps-dim:#6e7681;
+  --ps-blue:#4493f8; --ps-green:#3fb950; --ps-red:#f85149; --ps-yellow:#d29922; }
 .ps * { box-sizing:border-box; }
 .ps-bar { display:flex; align-items:center; gap:8px; padding:8px 12px;
   border-bottom:1px solid var(--ps-bd); background:var(--ps-bg2); flex:0 0 auto; flex-wrap:wrap; }
